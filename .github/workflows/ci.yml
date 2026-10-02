@@ -1,0 +1,24 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Lint and test the digest script
+        run: |
+          # ruff pinned on purpose: an unpinned release can widen the rule set.
+          pip install 'ruff==0.16.2' pytest
+          ruff check scripts tests
+          ruff format --check scripts tests
+          pytest -q tests

@@ -15,6 +15,25 @@ The project hub for [github.com/effecet](https://github.com/effecet): a single s
 
 Copy an `<article class="card">` block in `index.html`, set `data-repo` to the repo name and `data-tags` to `ai`, `infra` or `fun`, then add a preview to `assets/` or use a `thumb code` block.
 
+## Weekly PR digest
+
+`.github/workflows/pr-digest.yml` runs every Monday (12:00 UTC) and sends one
+Telegram message listing every open PR across the account's public repos,
+grouped as Dependabot / Claude / yours, each with its CI state and whether
+auto-merge is queued. The logic is `scripts/pr_digest.py` (standard library
+only, tested in `tests/`).
+
+Set two repo secrets to enable sending; without them the digest still shows in
+the workflow run summary:
+
+```
+gh secret set TELEGRAM_BOT_TOKEN --repo effecet/effecet.github.io
+gh secret set TELEGRAM_CHAT_ID   --repo effecet/effecet.github.io
+```
+
+Run it now from the Actions tab (pr-digest → Run workflow) or
+`gh workflow run pr-digest --repo effecet/effecet.github.io`.
+
 ## License
 
 MIT © effece

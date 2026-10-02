@@ -1,0 +1,30 @@
+name: pr-digest
+
+# Weekly Telegram summary of every open PR across the owner's public repos.
+# Needs repo secrets TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID; without them the
+# digest is still built and shown in the run summary, just not sent.
+
+on:
+  schedule:
+    - cron: "0 12 * * 1"  # Mondays 12:00 UTC = 09:00 Halifax daylight time (08:00 in winter)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Build and send digest
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DIGEST_OWNER: ${{ github.repository_owner }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python scripts/pr_digest.py
