@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>effece · projects</title>
+<meta name="description" content="Open-source tools for AI-assisted engineering: Claude Code harnesses, MCP servers, CI templates, and a few small toys.">
+<meta property="og:title" content="effece · projects">
+<meta property="og:description" content="Claude Code harnesses, MCP servers, CI templates, and a few small toys.">
+<meta property="og:image" content="https://effecet.github.io/assets/claude-craft-kit.png">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23e07a5f'/><text x='16' y='22' font-family='monospace' font-size='16' font-weight='700' text-anchor='middle' fill='%23140f24'>fx</text></svg>">
+<style>
+  :root {
+    --bg: #f6f4fb;
+    --surface: #ffffff;
+    --surface-2: #efecf7;
+    --border: #dcd6ea;
+    --text: #1d1830;
+    --muted: #5d5675;
+    --accent: #c4552f;
+    --accent-soft: #fbe7df;
+    --on-accent: #ffffff;
+    --chip: #ece8f6;
+    --shadow: 0 1px 2px rgba(29, 24, 48, .06), 0 8px 24px rgba(29, 24, 48, .06);
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f0b1d;
+      --surface: #17122a;
+      --surface-2: #1f1937;
+      --border: #2e2650;
+      --text: #ece9f7;
+      --muted: #a39cbf;
+      --accent: #e8825f;
+      --accent-soft: #3a2230;
+      --on-accent: #1a0f0a;
+      --chip: #251e40;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 30px rgba(0, 0, 0, .35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f0b1d;
+    --surface: #17122a;
+    --surface-2: #1f1937;
+    --border: #2e2650;
+    --text: #ece9f7;
+    --muted: #a39cbf;
+    --accent: #e8825f;
+    --accent-soft: #3a2230;
+    --on-accent: #1a0f0a;
+    --chip: #251e40;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 30px rgba(0, 0, 0, .35);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.55 var(--sans);
+  }
+  a { color: inherit; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+
+  header { padding: 56px 0 28px; }
+  .top { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+  .handle { font: 600 14px var(--mono); color: var(--accent); letter-spacing: .02em; }
+  h1 { font-size: clamp(28px, 5vw, 44px); line-height: 1.12; margin: 14px 0 12px; letter-spacing: -.02em; max-width: 22ch; }
+  .lede { color: var(--muted); max-width: 62ch; margin: 0; font-size: 17px; }
+  .theme {
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    border-radius: 999px; padding: 6px 12px; font: 13px var(--mono); cursor: pointer;
+  }
+  .stats { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 22px; font: 13px var(--mono); color: var(--muted); }
+  .stats b { color: var(--text); font-weight: 600; }
+
+  nav.filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 22px; }
+  nav.filters button {
+    border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+    border-radius: 999px; padding: 6px 14px; font: 13px var(--sans); cursor: pointer;
+  }
+  nav.filters button[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 18px; padding-bottom: 40px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    overflow: hidden; display: flex; flex-direction: column; box-shadow: var(--shadow);
+    transition: transform .15s ease, border-color .15s ease;
+  }
+  .card:hover { transform: translateY(-2px); border-color: var(--accent); }
+  .card.featured { grid-column: span 2; }
+  @media (max-width: 760px) { .card.featured { grid-column: auto; } }
+  .card[hidden] { display: none; }
+
+  .thumb { aspect-ratio: 16 / 9; background: var(--surface-2); border-bottom: 1px solid var(--border); overflow: hidden; position: relative; }
+  .card.featured .thumb { aspect-ratio: 21 / 9; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
+  .thumb.code {
+    display: flex; align-items: flex-end; padding: 18px;
+    background:
+      radial-gradient(circle at 85% 15%, var(--accent-soft), transparent 55%),
+      repeating-linear-gradient(0deg, transparent 0 23px, var(--border) 23px 24px),
+      var(--surface-2);
+  }
+  .thumb.code pre { margin: 0; font: 12.5px/1.6 var(--mono); color: var(--muted); white-space: pre-wrap; }
+  .thumb.code pre .k { color: var(--accent); }
+  .live {
+    position: absolute; top: 10px; left: 10px; background: var(--surface); color: var(--text);
+    border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; font: 600 11px var(--mono);
+  }
+  .live::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #3fb950; margin-right: 6px; vertical-align: 1px; }
+
+  .body { padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 10px; flex: 1; }
+  .name { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .name h2 { font: 600 18px var(--mono); margin: 0; letter-spacing: -.01em; }
+  .meta { font: 12px var(--mono); color: var(--muted); white-space: nowrap; }
+  .desc { margin: 0; color: var(--muted); font-size: 15px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips span { background: var(--chip); border-radius: 6px; padding: 2px 8px; font: 12px var(--mono); color: var(--text); }
+  .foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; padding-top: 6px; flex-wrap: wrap; }
+  .links { display: flex; gap: 8px; }
+  .links a {
+    text-decoration: none; font: 600 13px var(--sans); border-radius: 8px; padding: 6px 12px;
+    border: 1px solid var(--border); background: var(--surface);
+  }
+  .links a.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .links a:hover { border-color: var(--accent); }
+  .badge img { height: 20px; display: block; }
+
+  footer { border-top: 1px solid var(--border); padding: 22px 0 40px; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { .card { transition: none; } .card:hover { transform: none; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="top">
+      <span class="handle">github.com/effecet</span>
+      <button class="theme" id="theme" type="button" aria-label="Toggle colour theme">◐ theme</button>
+    </div>
+    <h1>Tools for building with AI agents, and a few small toys.</h1>
+    <p class="lede">Claude Code workflow harnesses, MCP servers, a Postgres memory for agents, CI templates and homelab bits. Everything here is MIT-licensed, runs locally and has CI.</p>
+    <div class="stats" id="stats">
+      <span><b>9</b> projects</span>
+      <span><b>4</b> live demos</span>
+      <span><b>MIT</b> everywhere</span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <nav class="filters" aria-label="Filter projects">
+    <button type="button" data-filter="all" aria-pressed="true">All</button>
+    <button type="button" data-filter="ai" aria-pressed="false">AI &amp; Claude Code</button>
+    <button type="button" data-filter="infra" aria-pressed="false">CI &amp; infra</button>
+    <button type="button" data-filter="fun" aria-pressed="false">Demos &amp; toys</button>
+  </nav>
+
+  <section class="grid" id="grid">
+
+    <article class="card featured" data-tags="ai" data-repo="memory-persistor">
+      <a class="thumb" href="https://effecet.github.io/memory-persistor/" aria-label="memory-persistor live demo">
+        <img src="assets/memory-persistor.gif" alt="Animated 3D knowledge graph of agent memories, coloured by thermal tier" loading="lazy">
+        <span class="live">live demo</span>
+      </a>
+      <div class="body">
+        <div class="name"><h2>memory-persistor</h2><span class="meta" data-meta></span></div>
+        <p class="desc">Long-term memory for Claude Code agents, stored in PostgreSQL. Memories cool down when unused, link into a knowledge graph, and come back through hybrid full-text, graph and vector retrieval. Ships as an MCP server.</p>
+        <div class="chips"><span>TypeScript</span><span>PostgreSQL</span><span>pgvector</span><span>Drizzle</span><span>MCP</span></div>
+        <div class="foot">
+          <div class="links"><a class="primary" href="https://effecet.github.io/memory-persistor/">Live demo</a><a href="https://github.com/effecet/memory-persistor">Code</a></div>
+          <a class="badge" href="https://github.com/effecet/memory-persistor/actions/workflows/ci.yml"><img src="https://github.com/effecet/memory-persistor/actions/workflows/ci.yml/badge.svg" alt="CI status" loading="lazy"></a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card" data-tags="ai" data-repo="claude-craft-kit">
+      <a class="thumb" href="https://effecet.github.io/claude-craft-kit/" aria-label="claude-craft-kit live demo">
+        <img src="assets/claude-craft-kit.png" alt="Animated flow of the Claude Code hook lifecycle" loading="lazy">
+        <span class="live">live demo</span>
+      </a>
+      <div class="body">
+        <div class="name"><h2>claude-craft-kit</h2><span class="meta" data-meta></span></div>
+        <p class="desc">An opinionated Claude Code harness: pre-tool guards, a tiered validation gate that picks how many reviewers a change needs, and a wrap-up exit gate.</p>
+        <div class="chips"><span>Python</span><span>Claude Code hooks</span><span>zero deps</span></div>
+        <div class="foot">
+          <div class="links"><a class="primary" href="https://effecet.github.io/claude-craft-kit/">Live demo</a><a href="https://github.com/effecet/claude-craft-kit">Code</a></div>
+          <a class="badge" href="https://github.com/effecet/claude-craft-kit/actions/workflows/ci.yml"><img src="https://github.com/effecet/claude-craft-kit/actions/workflows/ci.yml/badge.svg" alt="CI status" loading="lazy"></a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card" data-tags="ai" data-repo="codeberg-mcp">
+      <div class="thumb code" aria-hidden="true"><pre><span class="k">$</span> mcp tools codeberg
+  create_pull · merge_pull
+  list_workflow_runs · get_file
+  … 49 tools · 2 accounts</pre></div>
+      <div class="body">
+        <div class="name"><h2>codeberg-mcp</h2><span class="meta" data-meta></span></div>
+        <p class="desc">An MCP server for Codeberg, Gitea and Forgejo with 49 tools across repos, PRs, issues, releases and Actions. Works with several accounts at once.</p>
+        <div class="chips"><span>Python</span><span>MCP</span><span>Forgejo API</span></div>
+        <div class="foot">
+          <div class="links"><a class="primary" href="https://github.com/effecet/codeberg-mcp">Code</a></div>
+          <a class="badge" href="https://github.com/effecet/codeberg-mcp/actions/workflows/ci.yml"><img src="https://github.com/effecet/codeberg-mcp/actions/workflows/ci.yml/badge.svg" alt="CI status" loading="lazy"></a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card" data-tags="ai" data-repo="investigator-researcher">
+      <div class="thumb code" aria-hidden="true"><pre><span class="k">/research</span> "topic"
+  → plan · search · read
+  → verify every citation
+  → report.md + sources</pre></div>
+      <div class="body">
+        <div class="name"><h2>investigator-researcher</h2><span class="meta" data-meta></span></div>
+        <p class="desc">A Claude Code skill for deep research. It writes a structured markdown report and checks every citation URL, marking each one verified, unverified or broken.</p>
+        <div class="chips"><span>Python</span><span>Claude Code skill</span><span>MCP</span></div>
+        <div class="foot">
+          <div class="links"><a class="primary" href="https://github.com/effecet/investigator-researcher">Code</a></div>
+          <a class="badge" href="https://github.com/effecet/investigator-researcher/actions/workflows/ci.yml"><img src="https://github.com/effecet/investigator-researcher/actions/workflows/ci.yml/badge.svg" alt="CI status" loading="lazy"></a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card" data-tags="infra" data-repo="ci-workflows">
+      <div class="thumb code" aria-hidden="true"><pre><span class="k">callers.yml</span> → render
+  python-app · node-app · docker
+  → synced to every caller repo
+  Forgejo + GitHub Actions</pre></div>
+      <div class="body">
+        <div class="name"><h2>ci-workflows</h2><span class="meta" data-meta></span></div>
+        <p class="desc">Generates CI templates for Forgejo/Gitea and GitHub Actions. Write a pipeline once, then sync it to every repo that uses it.</p>
+        <div class="chips"><span>Python</span><span>GitHub Actions</span><span>Forgejo</span></div>
+        <div class="foot">
+          <div class="links"><a class="primary" href="https://github.com/effecet/ci-workflows">Code</a></div>
+          <a class="badge" href="https://github.com/effecet/ci-workflows/actions/workflows/ci.yml"><img src="https://github.com/effecet/ci-workflows/actions/workflows/ci.yml/badge.svg" alt="CI status" loading="lazy"></a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card featured" data-tags="fun" data-repo="beat-garden">
+      <a class="thumb" href="https://effecet.github.io/beat-garden/" aria-label="beat-garden live demo">
+        <img src="assets/beat-garden.png" alt="Beat Garden step sequencer grid with glowing notes" loading="lazy">
+        <span class="live">live demo</span>
+      </a>
+      <div class="body">
+        <div class="name"><h2>beat-garden</h2><span class="meta" data-meta></span></div>
+        <p class="desc">A tiny Web Audio step sequencer in one offline HTML file. Tap squares, press play; every note fits the scale.</p>
+        <div class="chips"><span>JavaScript</span><span>Web Audio</span><span>no deps</span></div>
+        <div class="foot">
+          <div class="links"><a class="primary" href="https://effecet.github.io/beat-garden/">Play</a><a href="https://github.com/effecet/beat-garden">Code</a></div>
+        </div>
+      </div>
+    </article>
+
+    <article class="card" data-tags="infra" data-repo="caddy-stack">
+      <div class="thumb code" aria-hidden="true"><pre><span class="k">https://</span>grafana.home.lan
+<span class="k">https://</span>portainer.home.lan
+  ↳ Caddy · internal CA
+  ↳ docker compose up -d</pre></div>
+      <div class="body">
+        <div class="name"><h2>caddy-stack</h2><span class="meta" data-meta></span></div>
+        <p class="desc">A Caddy reverse-proxy template that gives internal homelab services real HTTPS names, deployed with Docker Compose.</p>
+        <div class="chips"><span>Caddy</span><span>Docker Compose</span><span>homelab</span></div>
+        <div class="foot">
+          <div class="links"><a class="primary" href="https://github.com/effecet/caddy-stack">Code</a></div>
+          <a class="badge" href="https://github.com/effecet/caddy-stack/actions/workflows/ci.yml"><img src="https://github.com/effecet/caddy-stack/actions/workflows/ci.yml/badge.svg" alt="CI status" loading="lazy"></a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card" data-tags="infra" data-repo="astroshell-lcd">
+      <div class="thumb code" aria-hidden="true"><pre>┌ 320×240 · USB serial ┐
+  CPU  ▇▇▇▇▅▁▁  41°C
+  RAM  ▇▇▅▁▁▁▁  3.1G
+└ systemd · Pillow ────┘</pre></div>
+      <div class="body">
+        <div class="name"><h2>astroshell-lcd</h2><span class="meta" data-meta></span></div>
+        <p class="desc">A small daemon that draws live hardware stats on a 320×240 USB-serial LCD. Runs under systemd on a Raspberry Pi.</p>
+        <div class="chips"><span>Python</span><span>Pillow</span><span>Raspberry Pi</span></div>
+        <div class="foot">
+          <div class="links"><a class="primary" href="https://github.com/effecet/astroshell-lcd">Code</a></div>
+          <a class="badge" href="https://github.com/effecet/astroshell-lcd/actions/workflows/ci.yml"><img src="https://github.com/effecet/astroshell-lcd/actions/workflows/ci.yml/badge.svg" alt="CI status" loading="lazy"></a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card featured" data-tags="fun" data-repo="genome-evolve-dashboard">
+      <a class="thumb" href="https://effecet.github.io/genome-evolve-dashboard/" aria-label="genome-evolve-dashboard live demo">
+        <img src="assets/genome-evolve-dashboard.png" alt="Skill genome dashboard showing today's practice cycle" loading="lazy">
+        <span class="live">live demo</span>
+      </a>
+      <div class="body">
+        <div class="name"><h2>genome-evolve-dashboard</h2><span class="meta" data-meta></span></div>
+        <p class="desc">A skill tracker that builds a short daily practice cycle from what you have been working on. A React single-page app that stores everything in your browser.</p>
+        <div class="chips"><span>React</span><span>localStorage</span><span>Vitest</span></div>
+        <div class="foot">
+          <div class="links"><a class="primary" href="https://effecet.github.io/genome-evolve-dashboard/">Live demo</a><a href="https://github.com/effecet/genome-evolve-dashboard">Code</a></div>
+          <a class="badge" href="https://github.com/effecet/genome-evolve-dashboard/actions/workflows/vitest.yml"><img src="https://github.com/effecet/genome-evolve-dashboard/actions/workflows/vitest.yml/badge.svg" alt="CI status" loading="lazy"></a>
+        </div>
+      </div>
+    </article>
+
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© effece · MIT licensed projects</span>
+    <a href="https://github.com/effecet">github.com/effecet</a>
+  </div>
+</footer>
+
+<script>
+  // Theme toggle: remembered per browser; storage may be unavailable (private mode).
+  (function () {
+    var root = document.documentElement;
+    try { var saved = localStorage.getItem("theme"); if (saved) root.dataset.theme = saved; } catch (e) {}
+    document.getElementById("theme").addEventListener("click", function () {
+      var dark = root.dataset.theme
+        ? root.dataset.theme === "dark"
+        : window.matchMedia("(prefers-color-scheme: dark)").matches;
+      root.dataset.theme = dark ? "light" : "dark";
+      try { localStorage.setItem("theme", root.dataset.theme); } catch (e) {}
+    });
+  })();
+
+  // Category filter.
+  (function () {
+    var buttons = document.querySelectorAll("nav.filters button");
+    buttons.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var f = btn.dataset.filter;
+        buttons.forEach(function (b) { b.setAttribute("aria-pressed", String(b === btn)); });
+        document.querySelectorAll(".card").forEach(function (card) {
+          card.hidden = f !== "all" && card.dataset.tags.split(" ").indexOf(f) === -1;
+        });
+      });
+    });
+  })();
+
+  // Live "updated N days ago" and stars from the public GitHub API.
+  // Purely decorative: the page is complete without it (rate limit, offline).
+  (function () {
+    function ago(iso) {
+      var days = Math.floor((Date.now() - new Date(iso)) / 864e5);
+      if (days < 1) return "today";
+      if (days < 30) return days + "d ago";
+      if (days < 365) return Math.floor(days / 30) + "mo ago";
+      return Math.floor(days / 365) + "y ago";
+    }
+    fetch("https://api.github.com/users/effecet/repos?per_page=100")
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (repos) {
+        var byName = {};
+        repos.forEach(function (r) { byName[r.name] = r; });
+        document.querySelectorAll(".card").forEach(function (card) {
+          var r = byName[card.dataset.repo];
+          if (!r) return;
+          var parts = ["updated " + ago(r.pushed_at)];
+          if (r.stargazers_count) parts.unshift("★ " + r.stargazers_count);
+          card.querySelector("[data-meta]").textContent = parts.join(" · ");
+        });
+      })
+      .catch(function () {});
+  })();
+</script>
+</body>
+</html>
