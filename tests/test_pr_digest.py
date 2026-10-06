@@ -1,5 +1,8 @@
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
@@ -19,6 +22,32 @@ def make(**kw):
     }
     base.update(kw)
     return d.PullRequest(**base)
+
+
+def merged(**kw):
+    base = {
+        "repo": "repo",
+        "number": 1,
+        "title": "t",
+        "url": "https://github.com/o/repo/pull/1",
+        "author": "effecet",
+        "body": "",
+        "merged_at": "2026-10-01T00:00:00Z",
+    }
+    base.update(kw)
+    return d.Merged(**base)
+
+
+NOW = datetime(2026, 10, 5, 17, 23, tzinfo=UTC)
+
+
+def digest(open_prs=(), merged_prs=(), health=None, capped=False):
+    return d.Digest(
+        open_prs=list(open_prs),
+        merged=list(merged_prs),
+        health=health if health is not None else {"a": "pass", "b": "pass"},
+        merged_capped=capped,
+    )
 
 
 def test_ci_state_failure_wins_over_pending():
@@ -46,6 +75,22 @@ def test_ci_state_pending_and_none():
     assert d.ci_state([]) == "none"
 
 
+def test_ci_state_ignores_the_digest_own_run():
+    own = {
+        "status": "in_progress",
+        "conclusion": None,
+        "details_url": "https://github.com/effecet/effecet.github.io/actions/runs/42/job/7",
+    }
+    other = {
+        "status": "completed",
+        "conclusion": "success",
+        "details_url": "https://github.com/effecet/effecet.github.io/actions/runs/420/job/1",
+    }
+    assert d.ci_state([own, other], ignore_run_id="42") == "pass"
+    assert d.ci_state([own, other]) == "pending"
+    assert d.ci_state([own], ignore_run_id="42") == "none"
+
+
 def test_group_of_dependabot_claude_and_human():
     assert d.group_of(make(author="dependabot[bot]")) == "Dependabot"
     assert (
@@ -55,11 +100,20 @@ def test_group_of_dependabot_claude_and_human():
     assert d.group_of(make()) == "Yours"
 
 
-def test_render_empty_says_nothing_open():
-    assert "Nothing open" in d.render([], "effecet")
+FOOTER = "All open PRs on GitHub</a>"
 
 
-def test_render_counts_groups_and_escapes_html():
+def test_render_quiet_week_still_reports_merges_and_health():
+    out = d.render(digest(), "effecet", NOW)
+    assert "Weekly PR digest" in out and "effecet" in out
+    assert "Mon 5 Oct 2026 · last 7 days" in out
+    assert "inbox zero" in out
+    assert "Merged</b>: none" in out
+    assert "2/2 repos green" in out
+    assert out.endswith(FOOTER)
+
+
+def test_render_open_prs_counts_groups_and_escapes_html():
     prs = [
         make(
             repo="a",
@@ -71,16 +125,155 @@ def test_render_counts_groups_and_escapes_html():
         ),
         make(repo="b", number=5, body=d.CLAUDE_MARKER),
     ]
-    out = d.render(prs, "effecet")
+    out = d.render(digest(open_prs=prs), "effecet", NOW)
     assert "2 open · 1 failing CI · 1 queued to auto-merge" in out
-    assert "<b>Dependabot</b> (1)" in out and "<b>Claude</b> (1)" in out
-    assert "<b>Yours</b>" not in out
+    assert "Dependabot</b> (1)" in out and "Claude</b> (1)" in out
+    assert "Yours</b>" not in out
     assert "bump &lt;x&gt; &amp; y" in out
     assert "auto-merge queued" in out
+    assert "inbox zero" not in out
 
 
-def test_render_stays_under_telegram_limit():
-    prs = [make(repo=f"repo{i}", number=i, title="x" * 90) for i in range(200)]
-    out = d.render(prs, "effecet")
-    assert len(out) <= d.TELEGRAM_LIMIT
-    assert "and more" in out
+def test_render_merged_counts_by_group():
+    prs = [merged(repo="dep", number=i, author="dependabot[bot]") for i in range(3)]
+    prs.append(merged(repo="cl", number=99, body=d.CLAUDE_MARKER))
+    out = d.render(digest(merged_prs=prs), "effecet", NOW)
+    assert "Merged</b>: 4\n" in out
+    assert "🤖 3 Dependabot · 🧠 1 Claude · 👤 0 yours" in out
+
+
+def test_render_merged_cap_keeps_the_newest():
+    start = datetime(2026, 9, 29, tzinfo=UTC)
+    prs = [
+        merged(repo=f"r{i}", merged_at=(start + timedelta(hours=i)).isoformat())
+        for i in range(d.MERGED_SHOWN + 2)
+    ]
+    out = d.render(digest(merged_prs=prs), "effecet", NOW)
+    newest, oldest = f"r{d.MERGED_SHOWN + 1}#1", "r0#1"
+    assert out.count("• ") == d.MERGED_SHOWN
+    assert newest in out and oldest not in out and "r1#1" not in out
+    assert out.index(newest) < out.index(f"r{d.MERGED_SHOWN}#1")
+    assert "+2 more" in out
+
+
+def test_render_merged_exactly_at_the_cap_has_no_more_line():
+    prs = [merged(repo=f"r{i}") for i in range(d.MERGED_SHOWN)]
+    out = d.render(digest(merged_prs=prs), "effecet", NOW)
+    assert out.count("• ") == d.MERGED_SHOWN
+    assert "more\n" not in out and "+0" not in out
+
+
+def test_render_merged_count_marks_a_capped_search():
+    out = d.render(digest(merged_prs=[merged()], capped=True), "effecet", NOW)
+    assert f"Merged</b>: 1 (search capped at {d.SEARCH_PAGE})" in out
+
+
+def test_render_merged_escapes_titles():
+    out = d.render(digest(merged_prs=[merged(title="a <b> & c")]), "effecet", NOW)
+    assert "a &lt;b&gt; &amp; c" in out
+
+
+def test_render_health_lists_only_repos_that_are_not_green():
+    health = {"ok": "pass", "broken": "fail", "busy": "pending", "bare": "none"}
+    out = d.render(digest(health=health), "effecet", NOW)
+    assert "1/4 repos green" in out
+    assert "❌ broken: CI failing" in out
+    assert "⏳ busy: CI running" in out and "▫️ bare: no CI checks" in out
+    assert "ok:" not in out
+
+
+def test_render_health_all_green_lists_no_repos():
+    out = d.render(digest(health={"a": "pass"}), "effecet", NOW)
+    assert "1/1 repos green ✅" in out
+    assert "a:" not in out
+
+
+def test_merged_query_covers_exactly_the_last_seven_days():
+    q = d.merged_query("effecet", NOW)
+    assert q == "is:pr is:merged user:effecet merged:>=2026-09-28T17:23:00Z"
+
+
+def item(repo, n, **extra):
+    base = {
+        "repository_url": f"https://api.github.com/repos/effecet/{repo}",
+        "number": n,
+        "title": "t",
+        "html_url": f"https://github.com/effecet/{repo}/pull/{n}",
+        "user": {"login": "dependabot[bot]"},
+        "body": None,
+        "pull_request": {"merged_at": "2026-10-02T03:00:00Z"},
+    }
+    base.update(extra)
+    return base
+
+
+def test_parse_merged_keeps_only_covered_repos():
+    out = d.parse_merged({"items": [item("kept", 1), item("archived", 2)]}, {"kept"})
+    assert [(m.repo, m.number, m.body, m.merged_at) for m in out] == [
+        ("kept", 1, "", "2026-10-02T03:00:00Z")
+    ]
+    assert d.group_of(out[0]) == "Dependabot"
+
+
+def test_parse_merged_tolerates_a_missing_pull_request_field():
+    found = {"items": [item("kept", 1, pull_request=None), item("kept", 2)]}
+    found["items"][1].pop("pull_request")
+    assert [m.merged_at for m in d.parse_merged(found, {"kept"})] == ["", ""]
+
+
+def test_render_long_backlog_keeps_every_section_and_the_limit():
+    health = {"good": "pass", "bad": "fail"}
+    for title_len in (1, 20, 45, 70, 90):
+        prs = [make(repo=f"repo{i}", number=i, title="x" * title_len) for i in range(300)]
+        out = d.render(digest(open_prs=prs, merged_prs=[merged()], health=health), "effecet", NOW)
+        assert d.units(out) <= d.TELEGRAM_LIMIT, title_len
+        assert "more open PRs" in out
+        assert "Merged</b>: 1" in out
+        assert "❌ bad: CI failing" in out
+        assert out.endswith(FOOTER)
+
+
+def test_open_section_stays_within_its_budget():
+    prs = [make(repo=f"repo{i}", number=i, title="x" * 40) for i in range(100)]
+    for budget in (10, 50, 300, 1000, 2500):
+        assert d.units("\n".join(d._open_section(prs, budget))) <= budget
+
+
+def test_units_counts_emoji_outside_the_bmp_as_two():
+    assert d.units("a✅🗞") == 1 + 1 + 2
+
+
+def test_render_health_exactly_at_the_cap_has_no_more_line():
+    health = {f"r{i:02}": "fail" for i in range(d.HEALTH_SHOWN)}
+    out = d.render(digest(health=health), "effecet", NOW)
+    assert out.count("CI failing") == d.HEALTH_SHOWN
+    assert "more" not in out.split("Default-branch CI")[1]
+
+
+def test_render_health_caps_the_failing_list():
+    health = {f"r{i:02}": "fail" for i in range(d.HEALTH_SHOWN + 3)}
+    out = d.render(digest(health=health), "effecet", NOW)
+    assert out.count("CI failing") == d.HEALTH_SHOWN
+    assert "+3 more" in out
+
+
+def test_ci_of_reads_an_api_error_as_no_ci_and_quotes_the_ref(monkeypatch):
+    seen = []
+
+    def empty_repo(path, token):
+        seen.append(path)
+        raise d.urllib.error.HTTPError(path, 409, "Git Repository is empty", {}, None)
+
+    monkeypatch.setattr(d, "_get", empty_repo)
+    assert d._ci_of("effecet", "new-repo", "feat/x#1", "t") == "none"
+    assert seen == ["/repos/effecet/new-repo/commits/feat%2Fx%231/check-runs?per_page=100"]
+
+
+def test_ci_of_raises_on_other_api_errors(monkeypatch):
+    def rate_limited(path, token):
+        raise d.urllib.error.HTTPError(path, 403, "rate limit", {}, None)
+
+    monkeypatch.setattr(d, "_get", rate_limited)
+    with pytest.raises(d.urllib.error.HTTPError) as exc:
+        d._ci_of("effecet", "repo", "main", "t")
+    assert exc.value.code == 403

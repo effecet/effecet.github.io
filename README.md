@@ -17,11 +17,21 @@ Copy an `<article class="card">` block in `index.html`, set `data-repo` to the r
 
 ## Weekly PR digest
 
-`.github/workflows/pr-digest.yml` runs every Monday (12:00 UTC) and sends one
-Telegram message listing every open PR across the account's public repos,
-grouped as Dependabot / Claude / yours, each with its CI state and whether
-auto-merge is queued. The logic is `scripts/pr_digest.py` (standard library
-only, tested in `tests/`).
+`.github/workflows/pr-digest.yml` runs every Monday (17:23 UTC, 14:23 Halifax
+daylight time) and sends one Telegram message covering the account's public
+repos:
+
+- **Open PRs**, grouped as Dependabot / Claude / yours, each with its CI state
+  and whether auto-merge is queued.
+- **Merged**: how many PRs merged in the 7 days before the run, split by the
+  same groups, with the most recent listed.
+- **Default-branch CI**: how many repos have a green default branch, naming any
+  that are failing, still running or have no CI. The digest's own run is left
+  out, so it never reports itself as running.
+
+Only the open-PR list is ever cut to fit Telegram's 4096-character limit; the
+other sections always arrive. The logic is `scripts/pr_digest.py` (standard
+library only, tested in `tests/`).
 
 Set two repo secrets to enable sending; without them the digest still shows in
 the workflow run summary:

@@ -1,12 +1,16 @@
 name: pr-digest
 
-# Weekly Telegram summary of every open PR across the owner's public repos.
+# Weekly Telegram summary across the owner's public repos: open PRs, PRs merged
+# in the last 7 days, and each repo's default-branch CI state.
 # Needs repo secrets TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID; without them the
 # digest is still built and shown in the run summary, just not sent.
 
 on:
   schedule:
-    - cron: "0 12 * * 1"  # Mondays 12:00 UTC = 09:00 Halifax daylight time (08:00 in winter)
+    # Mondays 17:23 UTC = 14:23 Halifax daylight time (13:23 in winter). Off the
+    # top of the hour on purpose: GitHub delays or drops scheduled runs most often
+    # at :00, when most crons fire.
+    - cron: "23 17 * * 1"
   workflow_dispatch:
 
 permissions:
@@ -18,6 +22,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false  # the script never runs git
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
