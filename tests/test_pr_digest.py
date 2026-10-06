@@ -1,4 +1,5 @@
 import sys
+import typing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -277,3 +278,70 @@ def test_ci_of_raises_on_other_api_errors(monkeypatch):
     with pytest.raises(d.urllib.error.HTTPError) as exc:
         d._ci_of("effecet", "repo", "main", "t")
     assert exc.value.code == 403
+
+
+def test_ci_state_can_report_cancelled_separately():
+    cancelled = {"status": "completed", "conclusion": "cancelled"}
+    ok = {"status": "completed", "conclusion": "success"}
+    failed = {"status": "completed", "conclusion": "failure"}
+    assert d.ci_state([cancelled, ok], cancelled_is_failure=False) == "cancelled"
+    assert d.ci_state([cancelled, ok]) == "fail"
+    assert d.ci_state([cancelled, failed], cancelled_is_failure=False) == "fail"
+    assert d.ci_state([cancelled, {"status": "queued"}], cancelled_is_failure=False) == "pending"
+
+
+def test_render_health_shows_cancelled_as_a_warning_not_a_failure():
+    out = d.render(digest(health={"ok": "pass", "starved": "cancelled"}), "effecet", NOW)
+    assert "1/2 repos green" in out
+    assert "⚠️ starved: CI cancelled" in out
+    assert "CI failing" not in out
+
+
+def test_collect_reports_cancelled_on_branches_but_fail_on_open_prs(monkeypatch):
+    cancelled = {"check_runs": [{"status": "completed", "conclusion": "cancelled"}]}
+    pr = {
+        "number": 7,
+        "title": "t",
+        "html_url": "https://github.com/effecet/repo/pull/7",
+        "user": {"login": "effecet"},
+        "body": "",
+        "head": {"sha": "abc"},
+        "auto_merge": None,
+    }
+
+    def fake_get(path, token):
+        if path.startswith("/users/"):
+            return [{"name": "repo", "default_branch": "main"}]
+        if "/pulls?" in path:
+            return [pr]
+        if "/check-runs" in path:
+            return cancelled
+        if path.startswith("/search/"):
+            return {"total_count": 0, "items": []}
+        raise AssertionError(path)
+
+    monkeypatch.setattr(d, "_get", fake_get)
+    monkeypatch.delenv("GITHUB_RUN_ID", raising=False)
+    got = d.collect("effecet", "t", NOW)
+    assert got.health == {"repo": "cancelled"}
+    assert [p.ci for p in got.open_prs] == ["fail"]
+
+
+def test_render_health_lists_failures_before_softer_states():
+    health = {f"a{i:02}": "cancelled" for i in range(d.HEALTH_SHOWN)}
+    health["zz-broken"] = "fail"
+    out = d.render(digest(health=health), "effecet", NOW)
+    assert "❌ zz-broken: CI failing" in out
+    assert out.index("zz-broken") < out.index("a00")
+    assert "+1 more" in out
+
+
+def test_lookup_tables_cover_every_ci_state():
+    states = set(typing.get_args(d.CIState))
+    assert set(d.SEVERITY) == set(d.ICON) == states
+    assert set(d.HEALTH_NOTE) == states - {"pass"}
+
+
+def test_render_health_lists_cancelled_before_running():
+    out = d.render(digest(health={"a-busy": "pending", "b-starved": "cancelled"}), "effecet", NOW)
+    assert out.index("b-starved: CI cancelled") < out.index("a-busy: CI running")
