@@ -34,7 +34,7 @@ MERGED_SHOWN = 8
 HEALTH_SHOWN = 10
 SEARCH_PAGE = 100  # merged-PR search reads one page; the count says so when it is capped
 
-CIState = Literal["pass", "fail", "pending", "none"]
+CIState = Literal["pass", "fail", "cancelled", "pending", "none"]
 
 FAILED = {"failure", "cancelled", "timed_out", "action_required", "startup_failure"}
 
@@ -78,28 +78,50 @@ def group_of(pr: PullRequest | Merged) -> str:
     return "Yours"
 
 
-def ci_state(check_runs: list[dict], ignore_run_id: str | None = None) -> CIState:
+def ci_state(
+    check_runs: list[dict],
+    ignore_run_id: str | None = None,
+    cancelled_is_failure: bool = True,
+) -> CIState:
     """Collapse a commit's check runs into one state. Skipped/neutral count as pass.
 
     `ignore_run_id` drops check runs belonging to that Actions run, so the
     digest does not report its own still-running job as "CI running".
+    With `cancelled_is_failure=False`, a cancelled job (often one that never got
+    a runner or hit its timeout) reads as "cancelled" rather than "fail", unless
+    something failed; a job still running outranks it.
     """
     if ignore_run_id:
         marker = f"/actions/runs/{ignore_run_id}/"
         check_runs = [r for r in check_runs if marker not in (r.get("details_url") or "")]
     if not check_runs:
         return "none"
-    if any(r.get("conclusion") in FAILED for r in check_runs):
+    hard = FAILED if cancelled_is_failure else FAILED - {"cancelled"}
+    if any(r.get("conclusion") in hard for r in check_runs):
         return "fail"
     if any(r.get("status") != "completed" for r in check_runs):
-        return "pending"
+        return "pending"  # a job still running could yet fail, so it outranks "cancelled"
+    if any(r.get("conclusion") == "cancelled" for r in check_runs):
+        return "cancelled"
     return "pass"
 
 
-ICON = {"pass": "✅", "fail": "❌", "pending": "⏳", "none": "▫️"}
+ICON: dict[CIState, str] = {
+    "pass": "✅",
+    "fail": "❌",
+    "cancelled": "⚠️",
+    "pending": "⏳",
+    "none": "▫️",
+}
 GROUP_ICON = {"Dependabot": "🤖", "Claude": "🧠", "Yours": "👤"}
 GROUP_COUNT_LABEL = {"Dependabot": "Dependabot", "Claude": "Claude", "Yours": "yours"}
-HEALTH_NOTE = {"fail": "CI failing", "pending": "CI running", "none": "no CI checks"}
+SEVERITY: list[CIState] = ["fail", "cancelled", "pending", "none", "pass"]
+HEALTH_NOTE: dict[CIState, str] = {
+    "fail": "CI failing",
+    "cancelled": "CI cancelled",
+    "pending": "CI running",
+    "none": "no CI checks",
+}
 
 
 def merged_query(owner: str, now: datetime) -> str:
@@ -189,12 +211,16 @@ def _health_section(health: dict[str, CIState]) -> list[str]:
     green = sum(state == "pass" for state in health.values())
     done = " ✅" if green == len(health) else ""
     lines = [f"🩺 <b>Default-branch CI</b>: {green}/{len(health)} repos green{done}"]
-    red = [repo for repo in sorted(health) if health[repo] != "pass"]
-    for repo in red[:HEALTH_SHOWN]:
+    # Worst first, so a real failure never ends up behind "+N more".
+    not_green = sorted(
+        (repo for repo in health if health[repo] != "pass"),
+        key=lambda repo: (SEVERITY.index(health[repo]), repo),
+    )
+    for repo in not_green[:HEALTH_SHOWN]:
         state = health[repo]
         lines.append(f"   {ICON[state]} {html.escape(repo)}: {HEALTH_NOTE[state]}")
-    if len(red) > HEALTH_SHOWN:
-        lines.append(f"   +{len(red) - HEALTH_SHOWN} more")
+    if len(not_green) > HEALTH_SHOWN:
+        lines.append(f"   +{len(not_green) - HEALTH_SHOWN} more")
     return lines
 
 
@@ -235,7 +261,9 @@ def _get(path: str, token: str) -> Any:
         return json.load(resp)
 
 
-def _ci_of(owner: str, repo: str, ref: str, token: str) -> CIState:
+def _ci_of(
+    owner: str, repo: str, ref: str, token: str, cancelled_is_failure: bool = True
+) -> CIState:
     """CI state of a commit or branch. An empty repo (404/409) reads as "none".
 
     Any other API error (bad token, rate limit) is raised, so a digest that
@@ -248,7 +276,11 @@ def _ci_of(owner: str, repo: str, ref: str, token: str) -> CIState:
         if exc.code in (404, 409):
             return "none"
         raise
-    return ci_state(runs.get("check_runs", []), os.environ.get("GITHUB_RUN_ID"))
+    return ci_state(
+        runs.get("check_runs", []),
+        os.environ.get("GITHUB_RUN_ID"),
+        cancelled_is_failure=cancelled_is_failure,
+    )
 
 
 def collect(owner: str, token: str, now: datetime) -> Digest:
@@ -259,7 +291,9 @@ def collect(owner: str, token: str, now: datetime) -> Digest:
         if repo.get("archived") or repo.get("private") or repo.get("fork"):
             continue
         name = repo["name"]
-        health[name] = _ci_of(owner, name, repo["default_branch"], token)
+        health[name] = _ci_of(
+            owner, name, repo["default_branch"], token, cancelled_is_failure=False
+        )
         for p in _get(f"/repos/{owner}/{name}/pulls?state=open&per_page=100", token):
             prs.append(
                 PullRequest(

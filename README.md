@@ -26,7 +26,9 @@ repos:
 - **Merged**: how many PRs merged in the 7 days before the run, split by the
   same groups, with the most recent listed.
 - **Default-branch CI**: how many repos have a green default branch, naming any
-  that are failing, still running or have no CI. The digest's own run is left
+  that are failing, still running, cancelled (shown as a warning, failures
+  listed first; often a job that never got a runner or hit its timeout) or have
+  no CI. The digest's own run is left
   out, so it never reports itself as running.
 
 Only the open-PR list is ever cut to fit Telegram's 4096-character limit; the
